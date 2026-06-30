@@ -1,5 +1,6 @@
 use bevy::{log::error, platform::collections::HashMap};
 use bytes::Bytes;
+use iroh::endpoint::Endpoint;
 use tokio::sync::{
     broadcast,
     mpsc::{self, error::TryRecvError},
@@ -7,9 +8,9 @@ use tokio::sync::{
 
 use crate::{
     server::{
-        connection::ServerConnection, EndpointAddrConfiguration, ServerAsyncMessage,
-        ServerDisconnectError, ServerGroupPayloadSendError, ServerGroupSendError,
-        ServerPayloadSendError, ServerSendError, ServerSyncMessage,
+        connection::ServerConnection, ServerAsyncMessage, ServerDisconnectError,
+        ServerGroupPayloadSendError, ServerGroupSendError, ServerPayloadSendError,
+        ServerSendError, ServerSyncMessage,
     },
     shared::{
         channels::{Channel, ChannelConfig, ChannelId, CloseReason},
@@ -19,56 +20,62 @@ use crate::{
     },
 };
 
-/// By default, when starting an [Endpoint], Quinnet creates 1 channel instance of each [ChannelConfig], each with their own [ChannelId].
-/// Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelConfig::OrderedReliable] channel.
-pub struct Endpoint {
+/// Server-side endpoint that manages client connections.
+pub struct ServerEndpoint {
     pub(crate) clients: HashMap<ClientId, PeerConnection<ServerConnection>>,
-    /// Incremental client id generator
+    /// The raw iroh endpoint.
+    pub(crate) raw: Endpoint,
     client_id_gen: ClientId,
-    /// Opened send channels configs on this endpoint
+    /// Opened send channels configs on this endpoint.
     opened_channels: HashMap<ChannelId, ChannelConfig>,
-    /// Internal ordered pool of available channel ids
+    /// Internal ordered pool of available channel ids.
     send_channel_ids: ChannelsIdsPool,
     close_sender: broadcast::Sender<()>,
-    /// Receiver for internal quinnet messages sent by the async endpoint
+    /// Receiver for internal messages sent by the async endpoint task.
     from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
-    /// Address configuration for this endpoint
-    addr_config: EndpointAddrConfiguration,
     stats: EndpointStats,
 
-    /// Parameters for all connections on this endpoint
     #[cfg(feature = "recv_channels")]
     recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
 }
 
-impl Endpoint {
+impl ServerEndpoint {
     pub(crate) fn new(
+        raw: Endpoint,
         endpoint_close_send: broadcast::Sender<()>,
         from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
-        addr_config: EndpointAddrConfiguration,
         #[cfg(feature = "recv_channels")]
         recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
     ) -> Self {
         Self {
             clients: HashMap::new(),
+            raw,
             client_id_gen: 0,
             opened_channels: HashMap::new(),
             send_channel_ids: ChannelsIdsPool::new(),
             close_sender: endpoint_close_send,
             from_async_endpoint_recv,
             stats: EndpointStats::default(),
-            addr_config,
             #[cfg(feature = "recv_channels")]
             recv_channels_cfg,
         }
     }
 
-    /// Returns an allocated vector of all the currently connected client ids
+    /// Access the raw iroh [`Endpoint`] for advanced use.
+    pub fn raw_endpoint(&self) -> &Endpoint {
+        &self.raw
+    }
+
+    /// Access the raw iroh [`Endpoint`] mutably.
+    pub fn raw_endpoint_mut(&mut self) -> &mut Endpoint {
+        &mut self.raw
+    }
+
+    /// Returns an allocated vector of all the currently connected client ids.
     pub fn clients(&self) -> Vec<ClientId> {
         self.clients.keys().cloned().collect()
     }
 
-    /// Same as [Endpoint::send_group_payload_on] but on the default channel
     pub fn send_group_payload<'a, I: Iterator<Item = &'a ClientId>, T: Into<Bytes>>(
         &mut self,
         client_ids: I,
@@ -80,7 +87,6 @@ impl Endpoint {
         }
     }
 
-    /// [`Endpoint::send_group_payload`] that logs the error instead of returning a result.
     pub fn try_send_group_payload<'a, I: Iterator<Item = &'a ClientId>, T: Into<Bytes>>(
         &mut self,
         client_ids: I,
@@ -91,11 +97,6 @@ impl Endpoint {
         }
     }
 
-    /// Sends the payload to the specified clients on the specified channel.
-    ///
-    /// Tries to send to each client before returning.
-    ///
-    /// Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupPayloadSendError`].
     pub fn send_group_payload_on<
         'a,
         I: Iterator<Item = &'a ClientId>,
@@ -123,7 +124,6 @@ impl Endpoint {
         }
     }
 
-    /// [`Endpoint::send_group_payload_on`] that logs the error instead of returning a result.
     pub fn try_send_group_payload_on<
         'a,
         I: Iterator<Item = &'a ClientId>,
@@ -140,7 +140,6 @@ impl Endpoint {
         }
     }
 
-    /// Same as [Endpoint::broadcast_payload_on] but on the default channel
     pub fn broadcast_payload<T: Into<Bytes>>(
         &mut self,
         payload: T,
@@ -151,11 +150,6 @@ impl Endpoint {
         }
     }
 
-    /// Sends the payload to all connected clients on the specified channel.
-    ///
-    /// Tries to send to each client before returning.
-    ///
-    /// Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupSendError`].
     pub fn broadcast_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &mut self,
         channel_id: C,
@@ -176,14 +170,12 @@ impl Endpoint {
         }
     }
 
-    /// Same as [Endpoint::broadcast_payload] but will log the error instead of returning it
     pub fn try_broadcast_payload<T: Into<Bytes>>(&mut self, payload: T) {
         if let Err(err) = self.broadcast_payload(payload) {
             error!("try_broadcast_payload: {}", err);
         }
     }
 
-    /// Same as [Endpoint::broadcast_payload_on] but will log the error instead of returning it
     pub fn try_broadcast_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &mut self,
         channel_id: C,
@@ -194,7 +186,6 @@ impl Endpoint {
         }
     }
 
-    /// Same as [Endpoint::send_payload] but on the default channel
     pub fn send_payload<T: Into<Bytes>>(
         &mut self,
         client_id: ClientId,
@@ -206,12 +197,6 @@ impl Endpoint {
         }
     }
 
-    /// Sends the payload to the specified client on the specified channel
-    ///
-    /// Will return an [`Err`] if:
-    /// - the channel does not exist/is closed
-    /// - or if the client is disconnected
-    /// - (or if the message queue is full)
     pub fn send_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
@@ -225,7 +210,6 @@ impl Endpoint {
         }
     }
 
-    /// Same as [Endpoint::send_payload] but will log the error instead of returning it
     pub fn try_send_payload<T: Into<Bytes>>(&mut self, client_id: ClientId, payload: T) {
         match self.send_payload(client_id, payload) {
             Ok(_) => {}
@@ -233,7 +217,6 @@ impl Endpoint {
         }
     }
 
-    /// Same as [Endpoint::send_payload_on] but will log the error instead of returning it
     pub fn try_send_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
@@ -262,7 +245,6 @@ impl Endpoint {
         }
     }
 
-    /// Logical "Disconnect", the client already closed/lost the connection.
     pub(crate) fn try_disconnect_closed_client(&mut self, client_id: ClientId) {
         if let Err(err) = self.internal_disconnect_client(client_id, CloseReason::PeerClosed) {
             error!(
@@ -272,16 +254,13 @@ impl Endpoint {
         }
     }
 
-    /// Disconnect a specific client. Removes it from the server.
-    ///
-    /// Disconnecting a client immediately prevents new messages from being sent on its connection and signal the underlying connection to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
-    ///
-    /// This may fail if no client if found for client_id, or if the client is already disconnected.
-    pub fn disconnect_client(&mut self, client_id: ClientId) -> Result<(), ServerDisconnectError> {
+    pub fn disconnect_client(
+        &mut self,
+        client_id: ClientId,
+    ) -> Result<(), ServerDisconnectError> {
         self.internal_disconnect_client(client_id, CloseReason::LocalOrder)
     }
 
-    /// Same as [Endpoint::disconnect_client] but errors are logged instead of returned
     pub fn try_disconnect_client(&mut self, client_id: ClientId) {
         if let Err(err) = self.disconnect_client(client_id) {
             error!(
@@ -291,50 +270,30 @@ impl Endpoint {
         }
     }
 
-    /// Disconnects all connect clients
     pub fn disconnect_all_clients(&mut self) {
         for (_, mut client_connection) in self.clients.drain() {
             let _ = client_connection.close(CloseReason::LocalOrder);
         }
     }
 
-    /// Returns statistics about a client if connected.
-    pub fn get_connection_stats(&self, client_id: ClientId) -> Option<quinn::ConnectionStats> {
-        self.clients
-            .get(&client_id)
-            .as_ref()
-            .map(|client| client.quinn_connection_stats())
-    }
-
-    /// Returns a mutable reference to a client connection if it exists
     pub fn connection_mut(
         &mut self,
         client_id: ClientId,
     ) -> Option<&mut PeerConnection<ServerConnection>> {
-        match self.clients.get_mut(&client_id) {
-            Some(client_connection) => Some(client_connection),
-            None => None,
-        }
+        self.clients.get_mut(&client_id)
     }
 
-    /// Returns a reference to a client connection if it exists
-    pub fn connection(&self, client_id: ClientId) -> Option<&PeerConnection<ServerConnection>> {
-        match self.clients.get(&client_id) {
-            Some(client_connection) => Some(client_connection),
-            None => None,
-        }
+    pub fn connection(
+        &self,
+        client_id: ClientId,
+    ) -> Option<&PeerConnection<ServerConnection>> {
+        self.clients.get(&client_id)
     }
 
-    /// Returns statistics about the server's endpoint
     pub fn endpoint_stats(&self) -> &EndpointStats {
         &self.stats
     }
 
-    /// Opens a channel of the requested [ChannelConfig] and returns its [ChannelId].
-    ///
-    /// If no channels were previously opened, the opened channel will be the new default channel.
-    ///
-    /// Can fail if the Endpoint is closed or if too many channels are already opened.
     pub fn open_channel(
         &mut self,
         channel_type: ChannelConfig,
@@ -343,7 +302,6 @@ impl Endpoint {
         Ok(self.create_endpoint_channel(channel_id, channel_type)?)
     }
 
-    /// Assumes presence of available channel ids
     pub(crate) fn unchecked_open_channel(
         &mut self,
         channel_type: ChannelConfig,
@@ -352,7 +310,6 @@ impl Endpoint {
         self.create_endpoint_channel(channel_id, channel_type)
     }
 
-    /// `channel_id` must be an available [ChannelId]
     fn create_endpoint_channel(
         &mut self,
         channel_id: ChannelId,
@@ -366,7 +323,6 @@ impl Endpoint {
                     return Err(err);
                 }
             };
-        // Only commit the changes once all channels have been confirmed to be created.
         for (client_id, channel) in unregistered_channels {
             self.clients
                 .get_mut(&client_id)
@@ -384,7 +340,6 @@ impl Endpoint {
     ) -> Result<HashMap<ClientId, Channel>, AsyncChannelError> {
         let mut unregistered_channels = HashMap::new();
         for (&client_id, client_connection) in self.clients.iter_mut() {
-            // Unregistered channels are dropped here on error, created async tasks are closing too.
             let channel = client_connection
                 .create_unregistered_connection_channel(channel_id, channel_type)?;
             unregistered_channels.insert(client_id, channel);
@@ -392,13 +347,6 @@ impl Endpoint {
         Ok(unregistered_channels)
     }
 
-    /// Closes the channel with the corresponding [ChannelId].
-    ///
-    /// No new messages will be able to be sent on this channel, however, the channel will properly try to send all the messages that were previously pushed to it, according to its [ChannelConfig], before fully closing.
-    ///
-    /// If the closed channel is the current default channel, the default channel gets set to `None`.
-    ///
-    /// Can fail if the [ChannelId] is unknown, or if the channel is already closed.
     pub fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), ChannelCloseError> {
         match self.opened_channels.remove(&channel_id) {
             Some(_) => {
@@ -412,13 +360,11 @@ impl Endpoint {
         }
     }
 
-    /// Set the default channel via its [ChannelId]
     #[inline(always)]
     pub fn set_default_channel(&mut self, channel_id: ChannelId) {
         self.send_channel_ids.set_default_channel(channel_id);
     }
 
-    /// Get the default [ChannelId]
     #[inline(always)]
     pub fn default_channel(&self) -> Option<ChannelId> {
         self.send_channel_ids.default_channel()
@@ -427,7 +373,6 @@ impl Endpoint {
     pub(crate) fn close_incoming_connections_handler(&mut self) -> Result<(), AsyncChannelError> {
         match self.close_sender.send(()) {
             Ok(_) => Ok(()),
-            // Connections handler is already closed
             Err(_) => Err(AsyncChannelError::InternalChannelClosed),
         }
     }
@@ -465,26 +410,13 @@ impl Endpoint {
     pub(crate) fn try_recv_from_async(&mut self) -> Result<ServerAsyncMessage, TryRecvError> {
         self.from_async_endpoint_recv.try_recv()
     }
-
-    /// Returns the current address configuration of this server endpoint
-    #[inline(always)]
-    pub fn addr_config(&self) -> &EndpointAddrConfiguration {
-        &self.addr_config
-    }
 }
 
 #[cfg(feature = "recv_channels")]
 use crate::server::ServerRecvChannelError;
 
 #[cfg(feature = "recv_channels")]
-impl Endpoint {
-    /// Attempts to receive a full payload sent by the specified client.
-    ///
-    /// - Returns an [`Ok`] result containg [`Some`] if there is a message from the client in the message buffer
-    /// - Returns an [`Ok`] result containg [`None`] if there is no message from the client in the message buffer
-    /// - Can return an [`Err`] if:
-    ///  - the client id is not valid
-    ///  - the channel id is not valid
+impl ServerEndpoint {
     pub fn receive_payload<C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
@@ -496,7 +428,6 @@ impl Endpoint {
         }
     }
 
-    /// [`Endpoint::receive_payload`] that logs the error instead of returning a result.
     pub fn try_receive_payload<C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
@@ -531,38 +462,35 @@ impl Endpoint {
         }
     }
 
-    /// Clears all the received payloads buffers for all clients on this server endpoint.
     pub fn clear_payloads_from_clients(&mut self) {
         for connection in self.clients.values_mut() {
             connection.clear_received_payloads();
         }
     }
 
-    /// Enables or disables [`crate::shared::peer_connection::RecvChannelsConfiguration::clear_stale_received_payloads`] for all connections on this server endpoint.
     #[inline(always)]
     pub fn set_clear_stale_client_payloads(&mut self, enable: bool) {
         self.recv_channels_cfg.clear_stale_received_payloads = enable;
     }
 
-    /// Returns the current connection parameters of this server endpoint
     #[inline(always)]
     pub fn recv_channels_cfg(&self) -> &crate::shared::peer_connection::RecvChannelsConfiguration {
         &self.recv_channels_cfg
     }
 }
 
-/// Basic quinnet stats about this server endpoint
+/// Basic stats about this server endpoint.
 #[derive(Default)]
 pub struct EndpointStats {
     connect_count: u32,
     disconnect_count: u32,
 }
 impl EndpointStats {
-    /// Returns how many connection events occurred on this endpoint
+    /// Returns how many connection events occurred on this endpoint.
     pub fn connect_count(&self) -> u32 {
         self.connect_count
     }
-    /// Returns how many disconnections events occurred on this endpoint
+    /// Returns how many disconnection events occurred on this endpoint.
     pub fn disconnect_count(&self) -> u32 {
         self.disconnect_count
     }

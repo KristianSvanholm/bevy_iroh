@@ -1,6 +1,6 @@
 use bevy::log::{error, trace, warn};
-use futures::sink::SinkExt;
-use quinn::SendStream;
+use futures_util::sink::SinkExt;
+use iroh::endpoint::SendStream;
 use tokio_util::codec::FramedWrite;
 
 use crate::shared::channels::{
@@ -10,7 +10,7 @@ use crate::shared::channels::{
 use super::codec::QuinnetProtocolCodecEncoder;
 
 async fn new_uni_frame_sender(
-    connection: &quinn::Connection,
+    connection: &iroh::endpoint::Connection,
     raw_channel_id: ChannelId,
     max_frame_len: usize,
 ) -> FramedWrite<SendStream, QuinnetProtocolCodecEncoder> {

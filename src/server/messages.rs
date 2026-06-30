@@ -2,53 +2,43 @@ use bevy::log::error;
 use bytes::Bytes;
 
 use crate::{
-    server::{Endpoint, ServerGroupSendError, ServerReceiveError, ServerSendError},
+    server::{
+        endpoint::ServerEndpoint, ServerGroupSendError, ServerReceiveError, ServerSendError,
+    },
     shared::{channels::ChannelId, ClientId},
 };
 
-/// Error while sending a message to deserialize on the server
 #[derive(thiserror::Error, Debug)]
 pub enum ServerMessageSendError {
-    /// Failed serialization
     #[error("Failed serialization")]
     Serialization,
-    /// There is no default channel
     #[error("There is no default channel")]
     NoDefaultChannel,
-    /// Error when sending data
     #[error("Error when sending data")]
     SendError(#[from] ServerSendError),
 }
 
-/// Error while sending a message to deserialize on the server to a group of clients
 #[derive(thiserror::Error, Debug)]
 pub enum ServerGroupMessageSendError {
-    /// Failed serialization
     #[error("Failed serialization")]
     Serialization,
-    /// There is no default channel
     #[error("There is no default channel")]
     NoDefaultChannel,
-    /// Error while sending data to a group of clients
     #[error("Error while sending data to a group of clients")]
     GroupSendError(#[from] ServerGroupSendError),
 }
 
-/// Error while receiving a message to deserialize on the server
 #[derive(thiserror::Error, Debug)]
 pub enum ServerMessageReceiveError {
-    /// Failed deserialization
     #[error("Failed deserialization")]
     Deserialization,
-    /// There is no default channel
     #[error("There is no default channel")]
     NoDefaultChannel,
-    /// Error while receiving data
     #[error("Error while receiving data")]
     ReceiveError(#[from] ServerReceiveError),
 }
 
-impl Endpoint {
+impl ServerEndpoint {
     /// Same as [Self::receive_message_from] but on the default channel
     pub fn receive_message<T: serde::de::DeserializeOwned>(
         &mut self,
@@ -75,10 +65,6 @@ impl Endpoint {
     }
 
     /// Attempt to deserialise a message into type `T`.
-    ///
-    /// Will return [`Err`] if:
-    /// - the bytes accumulated from the client aren't deserializable to T.
-    /// - or if this client is disconnected.
     pub fn receive_message_from<T: serde::de::DeserializeOwned, C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
@@ -95,7 +81,7 @@ impl Endpoint {
         }
     }
 
-    /// [`Endpoint::receive_message_from`] that logs the error instead of returning a result.
+    /// [`ServerEndpoint::receive_message_from`] that logs the error instead of returning a result.
     pub fn try_receive_message_from<T: serde::de::DeserializeOwned, C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
@@ -110,7 +96,7 @@ impl Endpoint {
         }
     }
 
-    /// Same as [Endpoint::send_message_on] but on the default channel
+    /// Same as [ServerEndpoint::send_message_on] but on the default channel
     pub fn send_message<T: serde::Serialize>(
         &mut self,
         client_id: ClientId,
@@ -123,12 +109,6 @@ impl Endpoint {
     }
 
     /// Sends a message to the specified client on the specified channel
-    ///
-    /// Will return an [`Err`] if:
-    /// - the specified channel does not exist/is closed
-    /// - or if the client is disconnected
-    /// - or if a serialization error occurs
-    /// - (or if the message queue is full)
     pub fn send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
@@ -141,7 +121,7 @@ impl Endpoint {
         }
     }
 
-    /// [`Endpoint::send_message`] that logs the error instead of returning a result.
+    /// [`ServerEndpoint::send_message`] that logs the error instead of returning a result.
     pub fn try_send_message<T: serde::Serialize>(&mut self, client_id: ClientId, message: T) {
         match self.send_message(client_id, message) {
             Ok(_) => {}
@@ -149,7 +129,7 @@ impl Endpoint {
         }
     }
 
-    /// [`Endpoint::send_message_on`] that logs the error instead of returning a result.
+    /// [`ServerEndpoint::send_message_on`] that logs the error instead of returning a result.
     pub fn try_send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
@@ -158,11 +138,11 @@ impl Endpoint {
     ) {
         match self.send_message_on(client_id, channel_id, message) {
             Ok(_) => {}
-            Err(err) => error!("try_send_message: {}", err),
+            Err(err) => error!("try_send_message_on: {}", err),
         }
     }
 
-    /// Same as [Endpoint::send_group_message_on] but on the default channel
+    /// Same as [ServerEndpoint::send_group_message_on] but on the default channel
     pub fn send_group_message<'a, I: Iterator<Item = &'a ClientId>, T: serde::Serialize>(
         &mut self,
         client_ids: I,
@@ -175,8 +155,6 @@ impl Endpoint {
     }
 
     /// Sends the message to the specified clients on the specified channel.
-    ///
-    /// Tries to send to each client before returning. Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupMessageSendError`].
     pub fn send_group_message_on<
         'a,
         I: Iterator<Item = &'a ClientId>,
@@ -206,7 +184,7 @@ impl Endpoint {
         }
     }
 
-    /// Same as [Endpoint::send_group_message] but will log the error instead of returning it
+    /// Same as [ServerEndpoint::send_group_message] but will log the error instead of returning it
     pub fn try_send_group_message<'a, I: Iterator<Item = &'a ClientId>, T: serde::Serialize>(
         &mut self,
         client_ids: I,
@@ -217,7 +195,7 @@ impl Endpoint {
         }
     }
 
-    /// Same as [Endpoint::send_group_message_on] but will log the error instead of returning it
+    /// Same as [ServerEndpoint::send_group_message_on] but will log the error instead of returning it
     pub fn try_send_group_message_on<
         'a,
         I: Iterator<Item = &'a ClientId>,
@@ -230,11 +208,11 @@ impl Endpoint {
         message: T,
     ) {
         if let Err(err) = self.send_group_message_on(client_ids, channel_id, message) {
-            error!("try_send_group_message: {}", err);
+            error!("try_send_group_message_on: {}", err);
         }
     }
 
-    /// Same as [Endpoint::broadcast_message_on] but on the default channel
+    /// Same as [ServerEndpoint::broadcast_message_on] but on the default channel
     pub fn broadcast_message<T: serde::Serialize>(
         &mut self,
         message: T,
@@ -245,7 +223,7 @@ impl Endpoint {
         }
     }
 
-    /// Same as [Endpoint::broadcast_payload_on] but will serialize the message to a payload before
+    /// Same as [ServerEndpoint::broadcast_payload_on] but will serialize the message to a payload before
     pub fn broadcast_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &mut self,
         channel_id: C,
@@ -257,21 +235,21 @@ impl Endpoint {
         }
     }
 
-    /// Same as [Endpoint::broadcast_message] but will log the error instead of returning it
+    /// Same as [ServerEndpoint::broadcast_message] but will log the error instead of returning it
     pub fn try_broadcast_message<T: serde::Serialize>(&mut self, message: T) {
         if let Err(err) = self.broadcast_message(message) {
             error!("try_broadcast_message: {}", err);
         }
     }
 
-    /// Same as [Endpoint::broadcast_message_on] but will log the error instead of returning it
+    /// Same as [ServerEndpoint::broadcast_message_on] but will log the error instead of returning it
     pub fn try_broadcast_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &mut self,
         channel_id: C,
         message: T,
     ) {
         if let Err(err) = self.broadcast_message_on(channel_id, message) {
-            error!("try_broadcast_message: {}", err);
+            error!("try_broadcast_message_on: {}", err);
         }
     }
 }

@@ -1,5 +1,4 @@
-use std::net::SocketAddr;
-
+use iroh::EndpointId;
 use tokio::sync::mpsc::{self, error::TrySendError};
 
 use crate::{
@@ -10,9 +9,9 @@ use crate::{
 /// A connection to a client from the server's perspective.
 pub type ServerSideConnection = PeerConnection<ServerConnection>;
 
-/// Specific data for a server-side connection
+/// Specific data for a server-side connection.
 pub struct ServerConnection {
-    connection_handle: InternalConnectionRef,
+    pub(crate) connection_handle: InternalConnectionRef,
     to_connection_send: mpsc::Sender<ServerSyncMessage>,
 }
 impl ServerConnection {
@@ -28,15 +27,13 @@ impl ServerConnection {
 }
 
 impl ServerSideConnection {
-    /// See [quinn::Connection::max_datagram_size]
     #[inline(always)]
     pub fn max_datagram_size(&self) -> Option<usize> {
         self.specific.connection_handle.max_datagram_size()
     }
 
-    /// Returns statistics about a client connection
     #[inline(always)]
-    pub fn quinn_connection_stats(&self) -> quinn::ConnectionStats {
+    pub fn connection_stats(&self) -> iroh::endpoint::ConnectionStats {
         self.specific.connection_handle.stats()
     }
 
@@ -48,9 +45,9 @@ impl ServerSideConnection {
         self.specific.to_connection_send.try_send(msg)
     }
 
-    /// Returns the remote IP address of the client.
+    /// Returns the remote endpoint id of the client.
     #[inline(always)]
-    pub fn remote_addr(&self) -> SocketAddr {
-        self.specific.connection_handle.remote_address()
+    pub fn remote_id(&self) -> EndpointId {
+        self.specific.connection_handle.remote_id()
     }
 }

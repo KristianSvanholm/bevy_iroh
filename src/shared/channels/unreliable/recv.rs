@@ -7,7 +7,7 @@ use crate::shared::channels::{ChannelId, CloseRecv, CHANNEL_ID_LEN};
 
 pub(crate) async fn unreliable_channel_receiver_task<T: Display>(
     task_id: T,
-    connection: quinn::Connection,
+    connection: iroh::endpoint::Connection,
     mut close_recv: CloseRecv,
     bytes_incoming_send: mpsc::Sender<(ChannelId, Bytes)>,
 ) {

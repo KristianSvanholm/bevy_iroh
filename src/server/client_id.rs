@@ -1,13 +1,14 @@
 use bevy::prelude::*;
 use bytes::{BufMut, BytesMut};
-use futures::SinkExt;
+use futures_util::SinkExt;
+use iroh::endpoint::Connection;
 use tokio::sync::mpsc::{self};
 use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
 
 use crate::shared::{channels::ChannelAsyncMessage, ClientId, CLIENT_ID_LEN};
 
 pub(crate) fn spawn_client_id_sender(
-    connection_handle: quinn::Connection,
+    connection_handle: Connection,
     client_id: ClientId,
     from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
 ) {

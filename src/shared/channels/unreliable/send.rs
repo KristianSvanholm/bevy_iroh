@@ -1,6 +1,6 @@
 use bevy::log::{error, trace, warn};
 use bytes::{BufMut, Bytes, BytesMut};
-use quinn::SendDatagramError;
+use iroh::endpoint::SendDatagramError;
 
 use crate::shared::channels::{
     tasks::SendChannelTaskData, ChannelAsyncMessage, ChannelId, CloseReason, PROTOCOL_HEADER_LEN,
@@ -55,7 +55,7 @@ pub(crate) async fn unreliable_channel_task(mut task: SendChannelTaskData) {
 }
 
 fn send_unreliable_message(
-    connection: &quinn::Connection,
+    connection: &iroh::endpoint::Connection,
     msg_bytes: Bytes,
     channel_id: ChannelId,
 ) -> Result<(), SendDatagramError> {

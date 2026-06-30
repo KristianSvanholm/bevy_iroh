@@ -21,10 +21,10 @@ use bevy::{
         AlignItems, BackgroundColor, Interaction, JustifyContent, Node, PositionType, UiRect, Val,
     },
 };
-use bevy_quinnet::{
+use bevy_iroh::{
     client::{
         certificate::CertificateVerificationMode, connection::ClientAddrConfiguration,
-        ClientConnectionConfiguration, ClientConnectionConfigurationDefaultables, QuinnetClient,
+        ClientConnectionConfiguration, ClientConnectionConfigurationDefaultables, IrohClient,
     },
     shared::ClientId,
 };
@@ -102,7 +102,7 @@ struct WallBundle {
     sprite: Sprite,
     transform: Transform,
 }
-pub(crate) fn start_connection(mut client: ResMut<QuinnetClient>) {
+pub(crate) fn start_connection(mut client: ResMut<IrohClient>) {
     client
         .open_connection(ClientConnectionConfiguration {
             addr_config: ClientAddrConfiguration::from_ips(
@@ -178,7 +178,7 @@ pub(crate) fn spawn_bricks(
 
 pub(crate) fn handle_server_setup_messages(
     mut commands: Commands,
-    mut client: ResMut<QuinnetClient>,
+    mut client: ResMut<IrohClient>,
     mut client_data: ResMut<ClientData>,
     mut entity_mapping: ResMut<NetworkMapping>,
     mut next_state: ResMut<NextState<GameState>>,
@@ -237,7 +237,7 @@ pub(crate) fn handle_server_setup_messages(
 
 pub(crate) fn handle_server_gameplay_events(
     mut commands: Commands,
-    mut client: ResMut<QuinnetClient>,
+    mut client: ResMut<IrohClient>,
     client_data: ResMut<ClientData>,
     entity_mapping: ResMut<NetworkMapping>,
     mut balls: Query<
@@ -296,7 +296,7 @@ pub(crate) fn handle_server_gameplay_events(
 }
 
 pub(crate) fn handle_server_updates(
-    mut client: ResMut<QuinnetClient>,
+    mut client: ResMut<IrohClient>,
     entity_mapping: ResMut<NetworkMapping>,
     mut paddles: Query<&mut Transform, With<Paddle>>,
 ) {
@@ -322,7 +322,7 @@ pub(crate) struct PaddleState {
 }
 
 pub(crate) fn move_paddle(
-    mut client: ResMut<QuinnetClient>,
+    mut client: ResMut<IrohClient>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut local: Local<PaddleState>,
 ) {

@@ -4,9 +4,9 @@
 use std::net::Ipv6Addr;
 
 use bevy::prelude::*;
-use bevy_quinnet::{
-    client::QuinnetClientPlugin,
-    server::{QuinnetServer, QuinnetServerPlugin},
+use bevy_iroh::{
+    client::IrohClientPlugin,
+    server::{IrohServer, IrohServerPlugin},
 };
 use client::BACKGROUND_COLOR;
 
@@ -113,7 +113,7 @@ impl WallLocation {
     }
 }
 
-fn server_is_listening(server: Res<QuinnetServer>) -> bool {
+fn server_is_listening(server: Res<IrohServer>) -> bool {
     server.is_listening()
 }
 
@@ -121,8 +121,8 @@ fn main() {
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins,
-        QuinnetServerPlugin::default(),
-        QuinnetClientPlugin::default(),
+        IrohServerPlugin::default(),
+        IrohClientPlugin::default(),
     ));
     app.add_message::<CollisionEvent>();
     app.init_state::<GameState>();

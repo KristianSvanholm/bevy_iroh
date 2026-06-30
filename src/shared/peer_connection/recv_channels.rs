@@ -24,7 +24,7 @@ pub struct RecvChannelsConfiguration {
     pub max_buffered_payloads_count_per_channel: usize,
     /// Maximum number of receive channels that can be opened on this connection.
     pub max_receive_channels_count: usize,
-    /// If `true`, payloads on receive channels that were not read during this update will be cleared at the end of an Update cycle, in the [crate::shared::QuinnetSyncLast] schedule.
+    /// If `true`, payloads on receive channels that were not read during this update will be cleared at the end of an Update cycle, in the [crate::shared::IrohSyncLast] schedule.
     ///
     /// Defaults to [DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS].
     pub clear_stale_received_payloads: bool,

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
-use bevy_quinnet::{
+use bevy_iroh::{
     server::{
         certificate::CertificateRetrievalMode, endpoint::Endpoint, ConnectionLostEvent,
-        EndpointAddrConfiguration, QuinnetServer, QuinnetServerPlugin, ServerEndpointConfiguration,
+        EndpointAddrConfiguration, IrohServer, IrohServerPlugin, ServerEndpointConfiguration,
     },
     shared::ClientId,
 };
@@ -18,7 +18,7 @@ struct Users {
     names: HashMap<ClientId, String>,
 }
 
-fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut users: ResMut<Users>) {
+fn handle_client_messages(mut server: ResMut<IrohServer>, mut users: ResMut<Users>) {
     let endpoint = server.endpoint_mut();
     for client_id in endpoint.clients() {
         while let Some(message) = endpoint.try_receive_message(client_id) {
@@ -80,7 +80,7 @@ fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut users: ResMut<U
 
 fn handle_server_events(
     mut connection_lost_events: MessageReader<ConnectionLostEvent>,
-    mut server: ResMut<QuinnetServer>,
+    mut server: ResMut<IrohServer>,
     mut users: ResMut<Users>,
 ) {
     // The server signals us about users that lost connection
@@ -112,7 +112,7 @@ fn handle_disconnect(endpoint: &mut Endpoint, users: &mut ResMut<Users>, client_
     }
 }
 
-fn start_listening(mut server: ResMut<QuinnetServer>) {
+fn start_listening(mut server: ResMut<IrohServer>) {
     server
         .start_endpoint(ServerEndpointConfiguration {
             addr_config: EndpointAddrConfiguration::from_string("[::]:6000").unwrap(),
@@ -129,7 +129,7 @@ fn main() {
         .add_plugins((
             ScheduleRunnerPlugin::default(),
             LogPlugin::default(),
-            QuinnetServerPlugin::default(),
+            IrohServerPlugin::default(),
         ))
         .insert_resource(Users::default())
         .add_systems(Startup, start_listening)

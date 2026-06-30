@@ -5,7 +5,7 @@ use bevy::{
     ecs::message::MessageReader,
     prelude::{App, Res, ResMut, Resource, Startup, Update},
 };
-use bevy_quinnet::{
+use bevy_iroh::{
     client::{
         self,
         certificate::{
@@ -14,11 +14,11 @@ use bevy_quinnet::{
             CertificateVerificationMode,
         },
         connection::ClientAddrConfiguration,
-        ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin,
+        ClientConnectionConfiguration, IrohClient, IrohClientPlugin,
     },
     server::{
-        self, certificate::CertificateRetrievalMode, EndpointAddrConfiguration, QuinnetServer,
-        QuinnetServerPlugin, ServerEndpointConfiguration,
+        self, certificate::CertificateRetrievalMode, EndpointAddrConfiguration, IrohServer,
+        IrohServerPlugin, ServerEndpointConfiguration,
     },
     shared::{
         channels::{ChannelConfig, ChannelId},
@@ -63,7 +63,7 @@ pub fn build_client_app() -> App {
     client_app
         .add_plugins((
             ScheduleRunnerPlugin::default(),
-            QuinnetClientPlugin::default(),
+            IrohClientPlugin::default(),
         ))
         .insert_resource(ClientTestData::default())
         .add_systems(Startup, start_simple_connection)
@@ -76,7 +76,7 @@ pub fn build_server_app() -> App {
     server_app
         .add_plugins((
             ScheduleRunnerPlugin::default(),
-            QuinnetServerPlugin::default(),
+            IrohServerPlugin::default(),
         ))
         .insert_resource(ServerTestData::default())
         .add_systems(Startup, start_listening)
@@ -88,7 +88,7 @@ pub fn default_client_addr_configuration(port: u16) -> ClientAddrConfiguration {
     ClientAddrConfiguration::from_ips(SERVER_IP, port, LOCAL_BIND_IP, 0)
 }
 
-pub fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port>) {
+pub fn start_simple_connection(mut client: ResMut<IrohClient>, port: Res<Port>) {
     client
         .open_connection(ClientConnectionConfiguration {
             addr_config: default_client_addr_configuration(port.0),
@@ -98,7 +98,7 @@ pub fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port
         .unwrap();
 }
 
-pub fn start_listening(mut server: ResMut<QuinnetServer>, port: Res<Port>) {
+pub fn start_listening(mut server: ResMut<IrohServer>, port: Res<Port>) {
     server
         .start_endpoint(ServerEndpointConfiguration {
             addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, port.0),
@@ -185,7 +185,7 @@ pub fn wait_for_client_connected(client_app: &mut App, server_app: &mut App) -> 
         server_app.update();
         if client_app
             .world()
-            .resource::<QuinnetClient>()
+            .resource::<IrohClient>()
             .is_connected()
         {
             break;
@@ -203,7 +203,7 @@ pub fn wait_for_all_clients_disconnected(server_app: &mut App) -> ClientId {
         server_app.update();
         if server_app
             .world()
-            .resource::<QuinnetServer>()
+            .resource::<IrohServer>()
             .endpoint()
             .clients()
             .len()
@@ -220,7 +220,7 @@ pub fn wait_for_all_clients_disconnected(server_app: &mut App) -> ClientId {
 }
 
 pub fn get_default_client_channel(app: &App) -> ChannelId {
-    let client = app.world().resource::<QuinnetClient>();
+    let client = app.world().resource::<IrohClient>();
     client
         .connection()
         .default_channel()
@@ -228,7 +228,7 @@ pub fn get_default_client_channel(app: &App) -> ChannelId {
 }
 
 pub fn get_default_server_channel(app: &App) -> ChannelId {
-    let server = app.world().resource::<QuinnetServer>();
+    let server = app.world().resource::<IrohServer>();
     server
         .endpoint()
         .default_channel()
@@ -236,7 +236,7 @@ pub fn get_default_server_channel(app: &App) -> ChannelId {
 }
 
 pub fn close_client_channel(channel_id: ChannelId, app: &mut App) {
-    let mut client = app.world_mut().resource_mut::<QuinnetClient>();
+    let mut client = app.world_mut().resource_mut::<IrohClient>();
     client
         .connection_mut()
         .close_channel(channel_id)
@@ -244,7 +244,7 @@ pub fn close_client_channel(channel_id: ChannelId, app: &mut App) {
 }
 
 pub fn close_server_channel(channel_id: ChannelId, app: &mut App) {
-    let mut server = app.world_mut().resource_mut::<QuinnetServer>();
+    let mut server = app.world_mut().resource_mut::<IrohServer>();
     server
         .endpoint_mut()
         .close_channel(channel_id)
@@ -252,7 +252,7 @@ pub fn close_server_channel(channel_id: ChannelId, app: &mut App) {
 }
 
 pub fn open_client_channel(channel_type: ChannelConfig, app: &mut App) -> ChannelId {
-    let mut client = app.world_mut().resource_mut::<QuinnetClient>();
+    let mut client = app.world_mut().resource_mut::<IrohClient>();
     client
         .connection_mut()
         .open_channel(channel_type)
@@ -260,7 +260,7 @@ pub fn open_client_channel(channel_type: ChannelConfig, app: &mut App) -> Channe
 }
 
 pub fn open_server_channel(channel_type: ChannelConfig, app: &mut App) -> ChannelId {
-    let mut server = app.world_mut().resource_mut::<QuinnetServer>();
+    let mut server = app.world_mut().resource_mut::<IrohServer>();
     server
         .endpoint_mut()
         .open_channel(channel_type)
@@ -276,7 +276,7 @@ pub fn wait_for_client_message(
         server_app.update();
         match server_app
             .world_mut()
-            .resource_mut::<QuinnetServer>()
+            .resource_mut::<IrohServer>()
             .endpoint_mut()
             .receive_payload(client_id, channel_id)
         {
@@ -294,7 +294,7 @@ pub fn wait_for_server_message(client_app: &mut App, channel_id: ChannelId) -> b
         client_app.update();
         match client_app
             .world_mut()
-            .resource_mut::<QuinnetClient>()
+            .resource_mut::<IrohClient>()
             .connection_mut()
             .receive_payload(channel_id)
         {
@@ -317,7 +317,7 @@ pub fn send_and_test_client_message(
     *msg_counter += 1;
     let client_message_payload = bytes::Bytes::from(vec![client_id as u8, *msg_counter as u8]);
 
-    let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
+    let mut client = client_app.world_mut().resource_mut::<IrohClient>();
     client
         .connection_mut()
         .send_payload_on(channel_id, client_message_payload.clone())
@@ -337,7 +337,7 @@ pub fn send_and_test_server_message(
     *msg_counter += 1;
     let server_message_payload = bytes::Bytes::from(vec![client_id as u8, *msg_counter as u8]);
 
-    let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
+    let mut server = server_app.world_mut().resource_mut::<IrohServer>();
     server
         .endpoint_mut()
         .send_payload_on(client_id, channel_id, server_message_payload.clone())

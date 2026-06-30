@@ -1,6 +1,6 @@
 use bevy::log::trace;
 use bytes::Bytes;
-use quinn::VarInt;
+use iroh::endpoint::{Connection, VarInt};
 use tokio::sync::{
     broadcast,
     mpsc::{self},
@@ -15,9 +15,9 @@ use crate::shared::channels::{
     ChannelAsyncMessage, ChannelConfig, ChannelId, ChannelSyncMessage, CloseReason, CloseRecv,
 };
 
-/// Spawn a task to handle send channels creation for this connection
+/// Spawn a task to handle send channels creation for this connection.
 pub(crate) fn spawn_send_channels_tasks_spawner(
-    connection_handle: quinn::Connection,
+    connection_handle: Connection,
     close_recv: broadcast::Receiver<CloseReason>,
     to_channels_recv: mpsc::Receiver<ChannelSyncMessage>,
     from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
@@ -34,7 +34,7 @@ pub(crate) fn spawn_send_channels_tasks_spawner(
 }
 
 pub(crate) struct SendChannelTaskData {
-    pub(crate) connection: quinn::Connection,
+    pub(crate) connection: Connection,
     pub(crate) id: ChannelId,
     pub(crate) channels_keepalive: mpsc::Sender<()>,
     pub(crate) from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
@@ -44,12 +44,11 @@ pub(crate) struct SendChannelTaskData {
 }
 
 pub(crate) async fn send_channels_tasks_spawner(
-    connection: quinn::Connection,
+    connection: Connection,
     mut close_recv: broadcast::Receiver<CloseReason>,
     mut to_channels_recv: mpsc::Receiver<ChannelSyncMessage>,
     from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
 ) {
-    // Use an mpsc channel where, instead of sending messages, we wait for the channel to be closed, which happens when every sender has been dropped. We can't use a JoinSet as simply here since we would also need to drain closed channels from it.
     let (channel_tasks_keepalive, mut channel_tasks_waiter) = mpsc::channel::<()>(1);
 
     let close_receiver_clone = close_recv.resubscribe();
@@ -94,9 +93,6 @@ pub(crate) async fn send_channels_tasks_spawner(
         }
     };
 
-    // Wait for all the channels to have flushed/finished:
-    // We drop our sender first because the recv() call otherwise sleeps forever.
-    // When every sender has gone out of scope, the recv call will return with an error. We ignore the error.
     drop(channel_tasks_keepalive);
     let _ = channel_tasks_waiter.recv().await;
 
@@ -104,12 +100,11 @@ pub(crate) async fn send_channels_tasks_spawner(
 }
 
 pub(crate) fn spawn_recv_channels_tasks(
-    connection_handle: quinn::Connection,
+    connection_handle: Connection,
     connection_id: u64,
     close_recv: broadcast::Receiver<CloseReason>,
     bytes_incoming_send: mpsc::Sender<(ChannelId, Bytes)>,
 ) {
-    // Spawn a task to listen for reliable messages
     {
         let connection_handle = connection_handle.clone();
         let close_recv = close_recv.resubscribe();
@@ -125,7 +120,6 @@ pub(crate) fn spawn_recv_channels_tasks(
         });
     }
 
-    // Spawn a task to listen for unreliable datagrams
     {
         let connection_handle = connection_handle.clone();
         let close_recv = close_recv.resubscribe();

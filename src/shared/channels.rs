@@ -142,7 +142,7 @@ impl Channel {
 ///
 /// Declare 3 configured channels with their respective ids `0`, `1` and `2`:
 /// ```
-/// use bevy_quinnet::shared::channels::{ChannelConfig, SendChannelsConfiguration};
+/// use bevy_iroh::shared::channels::{ChannelConfig, SendChannelsConfiguration};
 ///
 /// let configs = SendChannelsConfiguration::from_configs(vec![
 ///     ChannelConfig::OrderedReliable {

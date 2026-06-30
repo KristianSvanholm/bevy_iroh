@@ -7,8 +7,6 @@ use bevy::{
 use channels::MAX_CHANNEL_COUNT;
 use tokio::runtime::Runtime;
 
-/// Certificate functionalities shared by client & server
-pub mod certificate;
 /// Channel functionalities shared by client & server
 pub mod channels;
 /// Shared error types
@@ -23,10 +21,10 @@ pub const DEFAULT_MESSAGE_QUEUE_SIZE: usize = 150;
 /// Keep-alive packets prevent an inactive but otherwise healthy connection from timing out.
 pub const DEFAULT_KEEP_ALIVE_INTERVAL_S: Duration = Duration::from_secs(4);
 
-/// Default max size for quinnet internal message channels
+/// Default max size for iroh internal message channels
 pub const DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE: usize = 100;
 
-/// Default max size for Quinnet Channels messages
+/// Default max size for iroh Channels messages
 ///
 /// At least MAX_CHANNEL_COUNT capacity if all available channel slots are requested to open
 pub const DEFAULT_QCHANNEL_MESSAGES_CHANNEL_SIZE: usize = 2 * MAX_CHANNEL_COUNT;
@@ -38,18 +36,18 @@ pub(crate) const DEFAULT_KILL_MESSAGE_QUEUE_SIZE: usize = 10;
 pub type ClientId = u64;
 pub(crate) const CLIENT_ID_LEN: usize = size_of::<ClientId>();
 
-/// Async runtime newtype wrapping the tokio runtime handle. used by both quinnet client and server's async back-ends.
+/// Async runtime newtype wrapping the tokio runtime handle. Used by both client and server's async back-ends.
 #[derive(Resource, Deref, DerefMut)]
 pub struct AsyncRuntime(pub(crate) Runtime);
-pub(crate) type InternalConnectionRef = quinn::Connection;
+pub(crate) type InternalConnectionRef = iroh::endpoint::Connection;
 
-/// System set used to update the sync client & server from updates coming from the async quinnet back-end.
+/// System set used to update the sync client & server from updates coming from the async iroh back-end.
 ///
 /// This is where client & server events are raised.
 ///
 /// This system set runs in [bevy::prelude::PreUpdate].
 #[derive(Debug, SystemSet, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct QuinnetSyncPreUpdate;
+pub struct IrohSyncPreUpdate;
 
 /// System set used to perform end-of-frame clean-up tasks.
 ///
@@ -57,4 +55,4 @@ pub struct QuinnetSyncPreUpdate;
 ///
 /// This system set runs in [bevy::prelude::Last].
 #[derive(Debug, SystemSet, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct QuinnetSyncLast;
+pub struct IrohSyncLast;

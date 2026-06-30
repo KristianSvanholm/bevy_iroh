@@ -1,5 +1,5 @@
 use bevy::prelude::{Entity, Vec2, Vec3};
-use bevy_quinnet::shared::{
+use bevy_iroh::shared::{
     channels::{ChannelConfig, ChannelId, SendChannelsConfiguration},
     ClientId,
 };

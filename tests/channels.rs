@@ -1,8 +1,8 @@
 use bevy::prelude::App;
 
-use bevy_quinnet::{
-    client::{ClientPayloadSendError, QuinnetClient},
-    server::{QuinnetServer, ServerGroupPayloadSendError},
+use bevy_iroh::{
+    client::{ClientPayloadSendError, IrohClient},
+    server::{IrohServer, ServerGroupPayloadSendError},
     shared::channels::ChannelConfig,
 };
 
@@ -34,7 +34,7 @@ fn default_channel() {
     close_server_channel(server_default_channel, &mut server_app);
 
     {
-        let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
+        let mut server = server_app.world_mut().resource_mut::<IrohServer>();
         assert_eq!(
             server.endpoint().default_channel(),
             None,
@@ -52,7 +52,7 @@ fn default_channel() {
         );
     }
     {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
+        let mut client = client_app.world_mut().resource_mut::<IrohClient>();
         assert_eq!(
             client.connection().default_channel(),
             None,

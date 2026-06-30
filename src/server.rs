@@ -1,25 +1,21 @@
-use std::{
-    collections::HashSet,
-    net::{AddrParseError, IpAddr, SocketAddr, UdpSocket},
-    sync::Arc,
-};
+use std::collections::HashSet;
 
 use bevy::prelude::*;
 use bytes::Bytes;
-use quinn::{default_runtime, Endpoint as QuinnEndpoint, EndpointConfig, ServerConfig};
+use iroh::endpoint::Endpoint;
 use tokio::{
     runtime,
     sync::{
-        broadcast::{self},
-        mpsc::{self},
+        broadcast,
+        mpsc,
     },
 };
 
 use crate::{
+    config::IrohEndpointConfig,
     server::{
-        certificate::{retrieve_certificate, CertificateRetrievalMode, ServerCertificate},
         connection::ServerConnection,
-        endpoint::Endpoint,
+        endpoint::ServerEndpoint,
     },
     shared::{
         channels::{
@@ -27,8 +23,8 @@ use crate::{
             ChannelAsyncMessage, ChannelId, ChannelSyncMessage, SendChannelsConfiguration,
         },
         peer_connection::PeerConnection,
-        AsyncRuntime, ClientId, QuinnetSyncPreUpdate, DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE,
-        DEFAULT_KEEP_ALIVE_INTERVAL_S, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+        AsyncRuntime, ClientId, IrohSyncPreUpdate, DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE,
+        DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
         DEFAULT_QCHANNEL_MESSAGES_CHANNEL_SIZE,
     },
 };
@@ -37,109 +33,31 @@ use crate::{
 mod client_id;
 
 #[cfg(feature = "bincode-messages")]
-/// Module for the server's bincode serde helpers feature
 pub mod messages;
 
-/// Module for the server's endpoint connections
 pub mod connection;
-/// Module for the server's endpoint features
 pub mod endpoint;
-/// Module for the server's error types
 pub mod error;
 
 pub use error::*;
 
-/// Module for the server's certificate features
-pub mod certificate;
-
-/// Connection event raised when a client just connected to the server. Raised in the CoreStage::PreUpdate stage.
+/// Connection event raised when a client just connected to the server.
 #[derive(bevy::ecs::message::Message, Debug, Copy, Clone)]
 pub struct ConnectionEvent {
-    /// Id of the client who connected
+    /// Id of the client who connected.
     pub id: ClientId,
 }
 
-/// ConnectionLost event raised when a client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
+/// ConnectionLost event raised when a client is considered disconnected from the server.
 #[derive(bevy::ecs::message::Message, Debug, Copy, Clone)]
 pub struct ConnectionLostEvent {
-    /// Id of the client who lost connection
+    /// Id of the client who lost connection.
     pub id: ClientId,
-}
-
-/// Configuration of a server's [Endpoint]
-#[derive(Debug, Clone)]
-pub struct EndpointAddrConfiguration {
-    /// Local address and port to bind to.
-    pub local_bind_addr: SocketAddr,
-}
-
-impl EndpointAddrConfiguration {
-    /// Creates a new EndpointAddrConfiguration
-    ///
-    /// # Arguments
-    ///
-    /// * `local_bind_addr_str` - Local address and port to bind to separated by `:`. The address should usually be a wildcard like `0.0.0.0` (for an IPv4) or `[::]` (for an IPv6), which allow communication with any reachable IPv4 or IPv6 address. See [`std::net::SocketAddrV4`] and [`std::net::SocketAddrV6`] or [`quinn::Endpoint`] for more precision.
-    ///
-    /// # Examples
-    ///
-    /// Listen on port 6000, on an IPv4 endpoint, for all incoming IPs.
-    /// ```
-    /// use bevy_quinnet::server::EndpointAddrConfiguration;
-    /// let config = EndpointAddrConfiguration::from_string("0.0.0.0:6000");
-    /// ```
-    /// Listen on port 6000, on an IPv6 endpoint, for all incoming IPs.
-    /// ```
-    /// use bevy_quinnet::server::EndpointAddrConfiguration;
-    /// let config = EndpointAddrConfiguration::from_string("[::]:6000");
-    /// ```
-    pub fn from_string(local_bind_addr_str: &str) -> Result<Self, AddrParseError> {
-        let local_bind_addr = local_bind_addr_str.parse()?;
-        Ok(Self::from_addr(local_bind_addr))
-    }
-
-    /// Creates a new EndpointAddrConfiguration
-    ///
-    /// # Arguments
-    ///
-    /// * `local_bind_ip` - Local IP address to bind to. The address should usually be a wildcard like `0.0.0.0` (for an IPv4) or `0:0:0:0:0:0:0:0` (for an IPv6), which allow communication with any reachable IPv4 or IPv6 address. See [`std::net::Ipv4Addr`] and [`std::net::Ipv6Addr`] for more precision.
-    /// * `local_bind_port` - Local port to bind to.
-    ///
-    /// # Examples
-    ///
-    /// Listen on port 6000, on an IPv6 endpoint, for all incoming IPs.
-    /// ```
-    /// use std::net::Ipv6Addr;
-    /// use bevy_quinnet::server::EndpointAddrConfiguration;
-    /// let config = EndpointAddrConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 6000);
-    /// ```
-    pub fn from_ip(local_bind_ip: impl Into<IpAddr>, local_bind_port: u16) -> Self {
-        Self::from_addr(SocketAddr::new(local_bind_ip.into(), local_bind_port))
-    }
-
-    /// Creates a new EndpointAddrConfiguration
-    ///
-    /// # Arguments
-    ///
-    /// * `local_bind_addr` - Local address and port to bind to. See [`std::net::SocketAddrV4`] and [`std::net::SocketAddrV6`] for more precision.
-    ///
-    /// # Examples
-    ///
-    /// Listen on port 6000, on an IPv6 endpoint, for all incoming IPs.
-    /// ```
-    /// use bevy_quinnet::server::EndpointAddrConfiguration;
-    /// use std::{net::{IpAddr, Ipv4Addr, SocketAddr}};
-    /// let config = EndpointAddrConfiguration::from_addr(
-    ///           SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 6000),
-    ///       );
-    /// ```
-    pub fn from_addr(local_bind_addr: SocketAddr) -> Self {
-        Self { local_bind_addr }
-    }
 }
 
 pub(crate) enum ServerAsyncMessage {
     ClientConnected(PeerConnection<ServerConnection>),
-    ClientConnectionClosed(ClientId), // TODO Might add a ConnectionError
+    ClientConnectionClosed(ClientId),
 }
 
 #[derive(Debug, Clone)]
@@ -147,16 +65,16 @@ pub(crate) enum ServerSyncMessage {
     ClientConnectedAck(ClientId),
 }
 
-/// Main quinnet server. Can open an [`crate::server::endpoint::Endpoint`] to handle multiple [`crate::server::connection::ServerSideConnection`] from multiple quinnet clients
+/// Main iroh server. Can manage multiple [`ServerSideConnection`]s from multiple iroh clients.
 ///
-/// Created by the [`QuinnetServerPlugin`] or inserted manually via a call to [`bevy::prelude::World::insert_resource`]. When created, it will look for an existing [`AsyncRuntime`] resource and use it or create one itself.
+/// Created by the [`IrohServerPlugin`] or inserted manually.
 #[derive(Resource)]
-pub struct QuinnetServer {
-    runtime: runtime::Handle,
-    endpoint: Option<Endpoint>,
+pub struct IrohServer {
+    pub(crate) runtime: runtime::Handle,
+    pub(crate) endpoint: Option<ServerEndpoint>,
 }
 
-impl FromWorld for QuinnetServer {
+impl FromWorld for IrohServer {
     fn from_world(world: &mut World) -> Self {
         if world.get_resource::<AsyncRuntime>().is_none() {
             let async_runtime = tokio::runtime::Builder::new_multi_thread()
@@ -167,32 +85,11 @@ impl FromWorld for QuinnetServer {
         };
 
         let runtime = world.resource::<AsyncRuntime>();
-        QuinnetServer::new(runtime.handle().clone())
+        IrohServer::new(runtime.handle().clone())
     }
 }
 
-/// Configuration of the server's endpoint
-#[derive(Debug, Clone)]
-pub struct ServerEndpointConfiguration {
-    /// Address configuration of the endpoint
-    pub addr_config: EndpointAddrConfiguration,
-    /// How to retrieve the server certificate
-    pub cert_mode: CertificateRetrievalMode,
-    /// Configuration for a [ServerEndpointConfiguration] that can be defaulted
-    pub defaultables: ServerEndpointConfigurationDefaultables,
-}
-
-/// Every configuration fields of a server's [Endpoint] that can be defaulted
-#[derive(Debug, Default, Clone)]
-pub struct ServerEndpointConfigurationDefaultables {
-    /// Configuration of the send channels opened on each connection accepted by this endpoint
-    pub send_channels_cfg: SendChannelsConfiguration,
-    /// Configuration for the recv channels for each connection accepted by this endpoint
-    #[cfg(feature = "recv_channels")]
-    pub recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
-}
-
-impl QuinnetServer {
+impl IrohServer {
     fn new(runtime: tokio::runtime::Handle) -> Self {
         Self {
             endpoint: None,
@@ -202,94 +99,93 @@ impl QuinnetServer {
 
     /// Returns a reference to the server's endpoint.
     ///
-    /// **Panics** if the endpoint is not opened
-    pub fn endpoint(&self) -> &Endpoint {
+    /// **Panics** if the endpoint is not opened.
+    pub fn endpoint(&self) -> &ServerEndpoint {
         self.endpoint.as_ref().unwrap()
     }
 
-    /// Returns a mutable reference to the server's endpoint
+    /// Returns a mutable reference to the server's endpoint.
     ///
-    /// **Panics** if the endpoint is not opened
-    pub fn endpoint_mut(&mut self) -> &mut Endpoint {
+    /// **Panics** if the endpoint is not opened.
+    pub fn endpoint_mut(&mut self) -> &mut ServerEndpoint {
         self.endpoint.as_mut().unwrap()
     }
 
-    /// Returns an optional reference to the server's endpoint
-    pub fn get_endpoint(&self) -> Option<&Endpoint> {
+    /// Returns an optional reference to the server's endpoint.
+    pub fn get_endpoint(&self) -> Option<&ServerEndpoint> {
         self.endpoint.as_ref()
     }
 
-    /// Returns an optional mutable reference to the server's endpoint
-    pub fn get_endpoint_mut(&mut self) -> Option<&mut Endpoint> {
+    /// Returns an optional mutable reference to the server's endpoint.
+    pub fn get_endpoint_mut(&mut self) -> Option<&mut ServerEndpoint> {
         self.endpoint.as_mut()
     }
 
     /// Starts a new endpoint, which will listen for incoming connections from clients.
     ///
-    /// # Arguments
-    /// - config: Configuration of the endpoint, including the local address and port to bind to.
-    /// - cert_mode: How to retrieve the server certificate
-    /// - channels_config: Configuration of the channels opened by default for each new connection accepted by this endpoint.
-    /// - connections_params: Configuration applied to each new connection accepted by this endpoint.
+    /// The endpoint is created from the provided [`IrohEndpointConfig`] (ALPN must be set).
     ///
-    /// Returns the [ServerCertificate] generated or loaded
+    /// Returns the [`EndpointId`] of this server (its public key).
     pub fn start_endpoint(
         &mut self,
-        config: ServerEndpointConfiguration,
-    ) -> Result<ServerCertificate, EndpointStartError> {
-        let server_cert = retrieve_certificate(config.cert_mode)?;
-        let mut quinn_endpoint_config = ServerConfig::with_single_cert(
-            server_cert.cert_chain.clone(),
-            server_cert.priv_key.clone_key(),
-        )?;
-        Arc::get_mut(&mut quinn_endpoint_config.transport)
-            .ok_or(EndpointStartError::LockAcquisitionFailure)?
-            .keep_alive_interval(Some(DEFAULT_KEEP_ALIVE_INTERVAL_S));
+        config: IrohEndpointConfig,
+        send_channels_cfg: SendChannelsConfiguration,
+        #[cfg(feature = "recv_channels")]
+        recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
+    ) -> Result<iroh::EndpointId, EndpointStartError> {
+        let sk = config.resolve_secret_key();
+        let builder = Endpoint::builder(iroh::endpoint::presets::N0)
+            .secret_key(sk)
+            .alpns(config.alpns.clone())
+            .relay_mode(config.relay_mode.clone());
+
+        let endpoint = self.runtime.block_on(async move {
+            builder.bind().await
+        })?;
+
+        let endpoint_id = endpoint.id();
 
         let (to_sync_endpoint_send, from_async_endpoint_recv) =
             mpsc::channel::<ServerAsyncMessage>(DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE);
         let (endpoint_close_send, endpoint_close_recv) =
             broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
-        let socket = std::net::UdpSocket::bind(config.addr_config.local_bind_addr)?;
+        info!("Starting endpoint with id: {} ...", endpoint_id.fmt_short());
 
-        info!(
-            "Starting endpoint on: {} ...",
-            config.addr_config.local_bind_addr
-        );
         #[cfg(feature = "recv_channels")]
-        let recv_channels_cfg_clone = config.defaultables.recv_channels_cfg.clone();
+        let recv_cfg = recv_channels_cfg.clone();
+        let ep_clone = endpoint.clone();
         self.runtime.spawn(async move {
             endpoint_task(
-                socket,
-                quinn_endpoint_config,
+                ep_clone,
                 to_sync_endpoint_send.clone(),
                 endpoint_close_recv,
                 #[cfg(feature = "recv_channels")]
-                recv_channels_cfg_clone,
+                recv_cfg,
             )
             .await;
         });
 
-        let mut endpoint = Endpoint::new(
+        let mut server_ep = ServerEndpoint::new(
+            endpoint,
             endpoint_close_send,
             from_async_endpoint_recv,
-            config.addr_config,
             #[cfg(feature = "recv_channels")]
-            config.defaultables.recv_channels_cfg,
+            recv_channels_cfg,
         );
-        for channel_type in config.defaultables.send_channels_cfg.configs() {
-            endpoint.unchecked_open_channel(*channel_type)?;
+
+        for channel_type in send_channels_cfg.configs() {
+            server_ep.unchecked_open_channel(*channel_type)?;
         }
 
-        self.endpoint = Some(endpoint);
+        self.endpoint = Some(server_ep);
 
-        Ok(server_cert)
+        Ok(endpoint_id)
     }
 
-    /// Closes the endpoint and all the connections associated with it
+    /// Closes the endpoint and all the connections associated with it.
     ///
-    /// Returns [`EndpointAlreadyClosed`] if the endpoint is already closed
+    /// Returns [`EndpointAlreadyClosed`] if the endpoint is already closed.
     pub fn stop_endpoint(&mut self) -> Result<(), EndpointAlreadyClosed> {
         match self.endpoint.take() {
             Some(mut endpoint) => {
@@ -310,22 +206,12 @@ impl QuinnetServer {
 }
 
 async fn endpoint_task(
-    socket: UdpSocket,
-    endpoint_config: ServerConfig,
+    endpoint: Endpoint,
     to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
     mut endpoint_close_recv: broadcast::Receiver<()>,
     #[cfg(feature = "recv_channels")]
     recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
 ) {
-    let endpoint = QuinnEndpoint::new(
-        EndpointConfig::default(),
-        Some(endpoint_config),
-        socket,
-        default_runtime().expect("async runtime should be valid"),
-    )
-    .expect("should create quinn endpoint");
-
-    // Handle incoming connections/clients.
     tokio::select! {
         _ = endpoint_close_recv.recv() => {
             trace!("Endpoint incoming connection handler received a request to close")
@@ -343,7 +229,7 @@ async fn endpoint_task(
                                 connection,
                                 to_sync_endpoint_send,
                                 #[cfg(feature = "recv_channels")]
-                                recv_channels_cfg
+                                recv_channels_cfg,
                             )
                             .await
                         });
@@ -355,7 +241,7 @@ async fn endpoint_task(
 }
 
 async fn client_connection_task(
-    connection_handle: quinn::Connection,
+    connection_handle: iroh::endpoint::Connection,
     to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
     #[cfg(feature = "recv_channels")]
     recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
@@ -383,14 +269,14 @@ async fn client_connection_task(
             recv_channels_cfg,
         )))
         .await
-        .expect("Failed to signal connection to sync client");
+        .expect("Failed to signal connection to sync server");
 
     // Wait for the sync server response before spawning connection tasks.
     match from_sync_server_recv.recv().await {
         Some(ServerSyncMessage::ClientConnectedAck(client_id)) => {
             info!(
                 "New connection from {}, client_id: {}",
-                connection_handle.remote_address(),
+                connection_handle.remote_id(),
                 client_id
             );
 
@@ -408,7 +294,6 @@ async fn client_connection_task(
                 tokio::spawn(async move {
                     let _conn_err = conn.closed().await;
                     info!("Connection {} closed: {}", client_id, _conn_err);
-                    // If we requested the connection to close, channel may have been closed already.
                     if !to_sync_server.is_closed() {
                         to_sync_server
                             .send(ServerAsyncMessage::ClientConnectionClosed(client_id))
@@ -434,7 +319,7 @@ async fn client_connection_task(
         }
         _ => info!(
             "Connection from {} refused",
-            connection_handle.remote_address()
+            connection_handle.remote_id()
         ),
     }
 }
@@ -442,9 +327,9 @@ async fn client_connection_task(
 /// - Receives events from the async server tasks
 /// - Updates the sync server state
 ///
-/// This system generates server's bevy events
+/// This system generates server's bevy events.
 pub fn handle_server_events(
-    mut server: ResMut<QuinnetServer>,
+    mut server: ResMut<IrohServer>,
     mut connection_events: MessageWriter<ConnectionEvent>,
     mut connection_lost_events: MessageWriter<ConnectionLostEvent>,
     mut lost_clients: Local<HashSet<ClientId>>,
@@ -480,7 +365,8 @@ pub fn handle_server_events(
                 ChannelAsyncMessage::LostConnection => {
                     if !lost_clients.contains(client_id) {
                         lost_clients.insert(*client_id);
-                        connection_lost_events.write(ConnectionLostEvent { id: *client_id });
+                        connection_lost_events
+                            .write(ConnectionLostEvent { id: *client_id });
                     }
                 }
             }
@@ -493,15 +379,13 @@ pub fn handle_server_events(
 }
 
 #[cfg(feature = "recv_channels")]
-/// Type alias for the server's recv channel error event
+/// Type alias for the server's recv channel error event.
 pub type ServerRecvChannelError = crate::shared::error::RecvChannelErrorEvent<ClientId>;
 
 #[cfg(feature = "recv_channels")]
-/// - Receives events from the async server tasks
-///
-/// This system generates server's bevy events
+/// Dispatches received payloads to their respective channel buffers for all clients.
 pub fn dispatch_received_payloads(
-    mut server: ResMut<QuinnetServer>,
+    mut server: ResMut<IrohServer>,
     mut recv_error_events: MessageWriter<ServerRecvChannelError>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
@@ -512,8 +396,8 @@ pub fn dispatch_received_payloads(
 }
 
 #[cfg(feature = "recv_channels")]
-/// Clears stale payloads on all receive channels
-pub fn clear_stale_received_payloads(mut server: ResMut<QuinnetServer>) {
+/// Clears stale payloads on all receive channels.
+pub fn clear_stale_received_payloads(mut server: ResMut<IrohServer>) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
     };
@@ -523,31 +407,29 @@ pub fn clear_stale_received_payloads(mut server: ResMut<QuinnetServer>) {
     }
 }
 
-/// Quinnet Server's plugin
+/// Iroh Server's plugin.
 ///
-/// It is possbile to add both this plugin and the [`crate::client::QuinnetClientPlugin`]
+/// It is possible to add both this plugin and the [`crate::client::IrohClientPlugin`].
 #[derive(Default)]
-pub struct QuinnetServerPlugin {
-    /// In order to have more control and only do the strict necessary, which is registering systems and events in the Bevy schedule, `initialize_later` can be set to `true`. This will prevent the plugin from initializing the `Server` Resource.
-    /// Server systems are scheduled to only run if the `Server` resource exists.
-    /// A Bevy command to create the resource `commands.init_resource::<Server>();` can be done later on, when needed.
+pub struct IrohServerPlugin {
+    /// If `true`, prevents the plugin from initializing the [`IrohServer`] Resource.
     pub initialize_later: bool,
 }
 
-impl Plugin for QuinnetServerPlugin {
+impl Plugin for IrohServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<ConnectionEvent>()
             .add_message::<ConnectionLostEvent>();
 
         if !self.initialize_later {
-            app.init_resource::<QuinnetServer>();
+            app.init_resource::<IrohServer>();
         }
 
         app.add_systems(
             PreUpdate,
             handle_server_events
-                .in_set(QuinnetSyncPreUpdate)
-                .run_if(resource_exists::<QuinnetServer>),
+                .in_set(IrohSyncPreUpdate)
+                .run_if(resource_exists::<IrohServer>),
         );
         #[cfg(feature = "recv_channels")]
         {
@@ -555,35 +437,31 @@ impl Plugin for QuinnetServerPlugin {
             app.add_systems(
                 PreUpdate,
                 dispatch_received_payloads
-                    .in_set(QuinnetSyncPreUpdate)
-                    .run_if(resource_exists::<QuinnetServer>),
+                    .in_set(IrohSyncPreUpdate)
+                    .run_if(resource_exists::<IrohServer>),
             );
             app.add_systems(
                 Last,
                 clear_stale_received_payloads
-                    .in_set(crate::shared::QuinnetSyncLast)
-                    .run_if(resource_exists::<QuinnetServer>),
+                    .in_set(crate::shared::IrohSyncLast)
+                    .run_if(resource_exists::<IrohServer>),
             );
         }
     }
 }
 
-/// Returns true if the following conditions are all true:
-/// - the server Resource exists
-/// - its endpoint is opened.
-pub fn server_listening(server: Option<Res<QuinnetServer>>) -> bool {
+/// Returns true if the server Resource exists and its endpoint is opened.
+pub fn server_listening(server: Option<Res<IrohServer>>) -> bool {
     match server {
         Some(server) => server.is_listening(),
         None => false,
     }
 }
 
-/// Returns true if the following conditions are all true:
-/// - the server Resource exists and its endpoint is opened
-/// - the previous condition was false during the previous update
+/// Returns true if the server was not listening last frame, but is now.
 pub fn server_just_opened(
     mut was_listening: Local<bool>,
-    server: Option<Res<QuinnetServer>>,
+    server: Option<Res<IrohServer>>,
 ) -> bool {
     let listening = server.map(|server| server.is_listening()).unwrap_or(false);
 
@@ -592,12 +470,10 @@ pub fn server_just_opened(
     just_opened
 }
 
-/// Returns true if the following conditions are all true:
-/// - the server Resource does not exists or its endpoint is closed
-/// - the previous condition was false during the previous update
+/// Returns true if the server was listening last frame, but is not now.
 pub fn server_just_closed(
     mut was_listening: Local<bool>,
-    server: Option<Res<QuinnetServer>>,
+    server: Option<Res<IrohServer>>,
 ) -> bool {
     let closed = server.map(|server| !server.is_listening()).unwrap_or(true);
 

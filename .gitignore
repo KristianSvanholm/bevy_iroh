@@ -1,3 +1,6 @@
 target
 *.pem
 Cargo.lock
+
+# direnv generated
+.direnv/

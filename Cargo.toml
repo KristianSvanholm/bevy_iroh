@@ -1,31 +1,23 @@
 [package]
-name = "bevy_quinnet"
-version = "0.20.0"
-description = "Bevy plugin for Client/Server multiplayer games using QUIC"
-repository = "https://github.com/Henauxg/bevy_quinnet"
-documentation = "https://docs.rs/bevy_quinnet"
+name = "bevy_iroh"
+version = "0.1.0"
+description = "Bevy plugin for peer-to-peer multiplayer games using iroh"
+repository = "https://github.com/n0-computer/bevy_iroh"
+documentation = "https://docs.rs/bevy_iroh"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-keywords = ["gamedev", "networking", "quic", "bevy", "plugin"]
+keywords = ["gamedev", "networking", "p2p", "bevy", "plugin"]
 categories = ["game-development", "network-programming"]
 readme = "README.md"
 exclude = ["assets/"]
 
 [dependencies]
 bevy = { version = "0.18.0", default-features = false, features = ["bevy_log"] }
-rustls = { version = "0.23", default-features = false, features = [] }
-rustls-pemfile = "2"
-rustls-platform-verifier = "0.5"
-ring = "0.17.7"
+iroh = "1"
 tokio = { version = "1.36.0", features = ["sync", "rt-multi-thread", "macros"] }
 tokio-util = { version = "0.7.4", features = ["codec"] }
-rcgen = "0.13"
-quinn = { version = "0.11.5", default-features = true }
-quinn-proto = "0.11.8"
 futures-util = "0.3.24"
-futures = "0.3.24"
 bytes = "1.5.0"
-base64 = "0.13.1"
 thiserror = "1.0.37"
 
 # Optional
@@ -35,24 +27,19 @@ serde = { version = "1.0.145", optional = true, features = ["derive"] }
 [features]
 default = ["client", "server", "recv_channels", "shared-client-id"]
 
-# Enables client features
 client = []
-# Enables server features
 server = []
 
-# Automatically dispatches received payloads to channel specific queues (for both client and server) 
 recv_channels = []
-# Server sends the client id to the client, client wait for it before being “connected”
 shared-client-id = []
-# Adds some quick utility methods on server and client to send messages directly (serialized/deserialized with bincode)
 bincode-messages = ["bincode", "serde"]
 
 [dev-dependencies]
 bevy = { version = "0.18.0", default-features = false, features = [
 	"bevy_asset",
 	"bevy_audio",
-	"vorbis",             # OGG/VORBIS audio format support
-	"bevy_window",        # Windowing layer
+	"vorbis",
+	"bevy_window",
 	"bevy_render",
 	"bevy_sprite",
 	"bevy_sprite_render",
@@ -62,7 +49,7 @@ bevy = { version = "0.18.0", default-features = false, features = [
 	"bevy_text",
 	"bevy_core_pipeline",
 	"serialize",
-	"x11",                # X11 display server support
+	"x11",
 ] }
 rand = "0.8.5"
 strum = { version = "0.27.2", features = ["derive"] }

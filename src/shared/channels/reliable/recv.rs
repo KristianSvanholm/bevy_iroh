@@ -1,7 +1,7 @@
 use bevy::log::trace;
 use bytes::{Buf, Bytes, BytesMut};
-use futures::StreamExt;
-use quinn::RecvStream;
+use futures_util::StreamExt;
+use iroh::endpoint::RecvStream;
 use std::{fmt::Display, io::Cursor};
 use tokio::sync::mpsc::{self};
 use tokio_util::codec::FramedRead;
@@ -13,7 +13,7 @@ use crate::shared::channels::{
 
 pub(crate) async fn reliable_channels_receiver_task<T: Display>(
     task_id: T,
-    connection: quinn::Connection,
+    connection: iroh::endpoint::Connection,
     mut close_recv: CloseRecv,
     bytes_incoming_send: mpsc::Sender<(ChannelId, Bytes)>,
 ) {

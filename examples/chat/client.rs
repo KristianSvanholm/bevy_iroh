@@ -13,12 +13,12 @@ use bevy::{
     log::{info, warn, LogPlugin},
     prelude::{App, Commands, Deref, DerefMut, PostUpdate, ResMut, Resource, Startup, Update},
 };
-use bevy_quinnet::{
+use bevy_iroh::{
     client::{
         certificate::CertificateVerificationMode,
         client_connected,
         connection::{ClientAddrConfiguration, ConnectionEvent, ConnectionFailedEvent},
-        ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin,
+        ClientConnectionConfiguration, IrohClient, IrohClientPlugin,
     },
     shared::ClientId,
 };
@@ -40,7 +40,7 @@ struct Users {
 #[derive(Resource, Deref, DerefMut)]
 struct TerminalReceiver(mpsc::Receiver<String>);
 
-pub fn on_app_exit(app_exit_events: MessageReader<AppExit>, mut client: ResMut<QuinnetClient>) {
+pub fn on_app_exit(app_exit_events: MessageReader<AppExit>, mut client: ResMut<IrohClient>) {
     if !app_exit_events.is_empty() {
         client
             .connection_mut()
@@ -51,7 +51,7 @@ pub fn on_app_exit(app_exit_events: MessageReader<AppExit>, mut client: ResMut<Q
     }
 }
 
-fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<QuinnetClient>) {
+fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<IrohClient>) {
     while let Some(message) = client.connection_mut().try_receive_message() {
         match message {
             ServerMessage::ClientConnected {
@@ -91,7 +91,7 @@ fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<QuinnetCl
 fn handle_terminal_messages(
     mut terminal_messages: ResMut<TerminalReceiver>,
     mut app_exit_events: MessageWriter<AppExit>,
-    mut client: ResMut<QuinnetClient>,
+    mut client: ResMut<IrohClient>,
 ) {
     while let Ok(message) = terminal_messages.try_recv() {
         if message == "quit" {
@@ -118,7 +118,7 @@ fn start_terminal_listener(mut commands: Commands) {
     commands.insert_resource(TerminalReceiver(from_terminal_receiver));
 }
 
-fn start_connection(mut client: ResMut<QuinnetClient>) {
+fn start_connection(mut client: ResMut<IrohClient>) {
     client
         .open_connection(ClientConnectionConfiguration {
             addr_config: ClientAddrConfiguration::from_strings("[::1]:6000", "[::]:0").unwrap(),
@@ -133,7 +133,7 @@ fn start_connection(mut client: ResMut<QuinnetClient>) {
 fn handle_client_events(
     mut connection_events: MessageReader<ConnectionEvent>,
     mut connection_failed_events: MessageReader<ConnectionFailedEvent>,
-    mut client: ResMut<QuinnetClient>,
+    mut client: ResMut<IrohClient>,
 ) {
     if !connection_events.is_empty() {
         // We are connected
@@ -166,7 +166,7 @@ fn main() {
         .add_plugins((
             ScheduleRunnerPlugin::default(),
             LogPlugin::default(),
-            QuinnetClientPlugin::default(),
+            IrohClientPlugin::default(),
         ))
         .insert_resource(Users::default())
         .add_systems(Startup, (start_terminal_listener, start_connection))

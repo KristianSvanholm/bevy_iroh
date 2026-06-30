@@ -8,10 +8,10 @@ use bevy::{
         Vec3, With,
     },
 };
-use bevy_quinnet::{
+use bevy_iroh::{
     server::{
         certificate::CertificateRetrievalMode, ConnectionEvent, EndpointAddrConfiguration,
-        QuinnetServer, ServerEndpointConfiguration, ServerEndpointConfigurationDefaultables,
+        IrohServer, ServerEndpointConfiguration, ServerEndpointConfigurationDefaultables,
     },
     shared::ClientId,
 };
@@ -81,7 +81,7 @@ struct WallBundle {
     collider: Collider,
 }
 
-pub(crate) fn start_listening(mut commands: Commands, mut server: ResMut<QuinnetServer>) {
+pub(crate) fn start_listening(mut commands: Commands, mut server: ResMut<IrohServer>) {
     commands.insert_resource(server::Players::default());
     server
         .start_endpoint(ServerEndpointConfiguration {
@@ -98,7 +98,7 @@ pub(crate) fn start_listening(mut commands: Commands, mut server: ResMut<Quinnet
 }
 
 pub(crate) fn handle_client_messages(
-    mut server: ResMut<QuinnetServer>,
+    mut server: ResMut<IrohServer>,
     mut players: ResMut<Players>,
 ) {
     let endpoint = server.endpoint_mut();
@@ -120,7 +120,7 @@ pub(crate) fn handle_client_messages(
 pub(crate) fn handle_server_events(
     mut commands: Commands,
     mut connection_events: MessageReader<ConnectionEvent>,
-    mut server: ResMut<QuinnetServer>,
+    mut server: ResMut<IrohServer>,
     mut players: ResMut<Players>,
 ) {
     // The server signals us about new connections
@@ -143,7 +143,7 @@ pub(crate) fn handle_server_events(
 }
 
 pub(crate) fn update_paddles(
-    mut server: ResMut<QuinnetServer>,
+    mut server: ResMut<IrohServer>,
     players: ResMut<Players>,
     mut paddles: Query<(&mut Transform, &Paddle, Entity)>,
 ) {
@@ -184,7 +184,7 @@ pub(crate) fn update_paddles(
 
 pub(crate) fn check_for_collisions(
     mut commands: Commands,
-    mut server: ResMut<QuinnetServer>,
+    mut server: ResMut<IrohServer>,
     mut ball_query: Query<(&mut Velocity, &Transform, Entity, &mut Ball)>,
     collider_query: Query<(Entity, &Transform, Option<&Brick>, Option<&Paddle>), With<Collider>>,
 ) {
@@ -265,7 +265,7 @@ pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<
 
 fn start_game(
     commands: &mut Commands,
-    server: &mut ResMut<QuinnetServer>,
+    server: &mut ResMut<IrohServer>,
     players: &ResMut<Players>,
 ) {
     let endpoint = server.endpoint_mut();

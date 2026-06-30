@@ -1,6 +1,6 @@
 use std::{thread::sleep, time::Duration};
 
-use bevy_quinnet::{client::QuinnetClient, server::QuinnetServer};
+use bevy_iroh::{client::IrohClient, server::IrohServer};
 
 // https://github.com/rust-lang/rust/issues/46379
 pub use utils::*;
@@ -23,12 +23,12 @@ fn connection_with_two_apps() {
     assert!(
         client_app
             .world()
-            .resource::<QuinnetClient>()
+            .resource::<IrohClient>()
             .get_connection()
             .is_some(),
         "The default connection should exist"
     );
-    let server = server_app.world().resource::<QuinnetServer>();
+    let server = server_app.world().resource::<IrohServer>();
     assert!(server.is_listening(), "The server should be listening");
 
     let client_id = wait_for_client_connected(&mut client_app, &mut server_app);
@@ -44,7 +44,7 @@ fn connection_with_two_apps() {
     assert!(
         client_app
             .world()
-            .resource::<QuinnetClient>()
+            .resource::<IrohClient>()
             .is_connected(),
         "The default connection should be connected to the server"
     );
@@ -58,7 +58,7 @@ fn connection_with_two_apps() {
 
     client_app
         .world_mut()
-        .resource_mut::<QuinnetClient>()
+        .resource_mut::<IrohClient>()
         .connection_mut()
         .send_payload(TEST_MESSAGE_PAYLOAD)
         .unwrap();
@@ -69,13 +69,13 @@ fn connection_with_two_apps() {
 
     let default_server_channel_id = server_app
         .world_mut()
-        .resource_mut::<QuinnetServer>()
+        .resource_mut::<IrohServer>()
         .endpoint_mut()
         .default_channel()
         .unwrap();
     let client_payload = server_app
         .world_mut()
-        .resource_mut::<QuinnetServer>()
+        .resource_mut::<IrohServer>()
         .endpoint_mut()
         .receive_payload(client_id, default_server_channel_id)
         .expect("Failed to receive client message");
@@ -86,7 +86,7 @@ fn connection_with_two_apps() {
 
     server_app
         .world_mut()
-        .resource_mut::<QuinnetServer>()
+        .resource_mut::<IrohServer>()
         .endpoint_mut()
         .broadcast_payload(TEST_MESSAGE_PAYLOAD)
         .unwrap();
@@ -97,7 +97,7 @@ fn connection_with_two_apps() {
 
     let server_message = client_app
         .world_mut()
-        .resource_mut::<QuinnetClient>()
+        .resource_mut::<IrohClient>()
         .connection_mut()
         .receive_payload(default_server_channel_id)
         .expect("Failed to receive server message");
@@ -140,7 +140,7 @@ fn reconnection() {
 
     client_app
         .world_mut()
-        .resource_mut::<QuinnetClient>()
+        .resource_mut::<IrohClient>()
         .connection_mut()
         .disconnect()
         .unwrap();
@@ -150,7 +150,7 @@ fn reconnection() {
 
     client_app
         .world_mut()
-        .resource_mut::<QuinnetClient>()
+        .resource_mut::<IrohClient>()
         .connection_mut()
         .reconnect()
         .unwrap();

@@ -4,15 +4,15 @@ use bevy::{
     app::ScheduleRunnerPlugin,
     prelude::{App, Update},
 };
-use bevy_quinnet::{
+use bevy_iroh::{
     client::{
         certificate::{CertVerificationStatus, CertificateVerificationMode, TrustOnFirstUseConfig},
-        ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin,
+        ClientConnectionConfiguration, IrohClient, IrohClientPlugin,
         DEFAULT_KNOWN_HOSTS_FILE,
     },
     server::{
-        certificate::CertificateRetrievalMode, EndpointAddrConfiguration, QuinnetServer,
-        QuinnetServerPlugin, ServerEndpointConfiguration,
+        certificate::CertificateRetrievalMode, EndpointAddrConfiguration, IrohServer,
+        IrohServerPlugin, ServerEndpointConfiguration,
     },
 };
 
@@ -57,7 +57,7 @@ fn trust_on_first_use() {
     client_app
         .add_plugins((
             ScheduleRunnerPlugin::default(),
-            QuinnetClientPlugin::default(),
+            IrohClientPlugin::default(),
         ))
         .insert_resource(ClientTestData::default())
         .add_systems(Update, handle_client_events);
@@ -66,7 +66,7 @@ fn trust_on_first_use() {
     server_app
         .add_plugins((
             ScheduleRunnerPlugin::default(),
-            QuinnetServerPlugin::default(),
+            IrohServerPlugin::default(),
         ))
         .insert_resource(ServerTestData::default())
         .add_systems(Update, handle_server_events);
@@ -77,7 +77,7 @@ fn trust_on_first_use() {
 
     // Client connects with empty cert store
     {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
+        let mut client = client_app.world_mut().resource_mut::<IrohClient>();
         client
             .open_connection(ClientConnectionConfiguration {
                 addr_config: default_client_addr_configuration(port),
@@ -92,7 +92,7 @@ fn trust_on_first_use() {
 
     // Server listens with a cert loaded from a file
     {
-        let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
+        let mut server = server_app.world_mut().resource_mut::<IrohServer>();
         let server_cert = server
             .start_endpoint(ServerEndpointConfiguration {
                 addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, port),
@@ -113,12 +113,12 @@ fn trust_on_first_use() {
     assert!(
         client_app
             .world()
-            .resource::<QuinnetClient>()
+            .resource::<IrohClient>()
             .get_connection()
             .is_some(),
         "The default connection should exist"
     );
-    let server = server_app.world().resource::<QuinnetServer>();
+    let server = server_app.world().resource::<IrohServer>();
     assert!(server.is_listening(), "The server should be listening");
 
     // Let the async runtime connection connect.
@@ -150,7 +150,7 @@ fn trust_on_first_use() {
             "The server name should match the one we configured"
         );
 
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
+        let mut client = client_app.world_mut().resource_mut::<IrohClient>();
         assert!(
             client.is_connected(),
             "The default connection should be connected to the server"
@@ -178,7 +178,7 @@ fn trust_on_first_use() {
         assert!(
             client_app
                 .world_mut()
-                .resource_mut::<QuinnetClient>()
+                .resource_mut::<IrohClient>()
                 .is_connected(),
             "The default connection should be connected to the server"
         );
@@ -189,14 +189,14 @@ fn trust_on_first_use() {
         // Clients disconnects
         client_app
             .world_mut()
-            .resource_mut::<QuinnetClient>()
+            .resource_mut::<IrohClient>()
             .close_all_connections();
     }
 
     // Server reboots, and generates a new self-signed certificate
     server_app
         .world_mut()
-        .resource_mut::<QuinnetServer>()
+        .resource_mut::<IrohServer>()
         .stop_endpoint()
         .unwrap();
 
@@ -205,7 +205,7 @@ fn trust_on_first_use() {
 
     let server_cert = server_app
         .world_mut()
-        .resource_mut::<QuinnetServer>()
+        .resource_mut::<IrohServer>()
         .start_endpoint(ServerEndpointConfiguration {
             addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, port),
             cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
@@ -217,7 +217,7 @@ fn trust_on_first_use() {
 
     // Client reconnects with its cert store containing the previously store certificate fingerprint
     {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
+        let mut client = client_app.world_mut().resource_mut::<IrohClient>();
         client
             .open_connection(ClientConnectionConfiguration {
                 addr_config: default_client_addr_configuration(port),
@@ -300,7 +300,7 @@ fn trust_on_first_use() {
             "The certificate verification status in the connection abort event should be `Untrusted`"
         );
 
-        let client = client_app.world().resource::<QuinnetClient>();
+        let client = client_app.world().resource::<IrohClient>();
         assert!(
             client.is_connected() == false,
             "The default connection should not be connected to the server"
