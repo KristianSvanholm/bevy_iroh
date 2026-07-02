@@ -1,6 +1,7 @@
 use bevy::prelude::Resource;
 use iroh::{
     endpoint::{Builder, RelayMode},
+    tls::CaTlsConfig,
     SecretKey,
 };
 
@@ -18,6 +19,9 @@ pub struct IrohEndpointConfig {
     pub alpns: Vec<Vec<u8>>,
     /// Optional secret key. Auto-generated if `None` (recommended for ephemeral sessions).
     pub secret_key: Option<SecretKey>,
+    /// Optional TLS CA configuration for verifying relay/HTTPS connections.
+    /// Defaults to embedded webpki roots if `None`.
+    pub ca_tls_config: Option<CaTlsConfig>,
 }
 
 impl Default for IrohEndpointConfig {
@@ -26,6 +30,7 @@ impl Default for IrohEndpointConfig {
             relay_mode: RelayMode::Default,
             alpns: Vec::new(),
             secret_key: None,
+            ca_tls_config: None,
         }
     }
 }
@@ -33,10 +38,14 @@ impl Default for IrohEndpointConfig {
 impl IrohEndpointConfig {
     /// Apply this config to an iroh [`Builder`], returning it ready to bind.
     pub fn apply_to_builder(&self, builder: Builder) -> Builder {
-        builder
+        let builder = builder
             .secret_key(self.resolve_secret_key())
             .alpns(self.alpns.clone())
-            .relay_mode(self.relay_mode.clone())
+            .relay_mode(self.relay_mode.clone());
+        match &self.ca_tls_config {
+            Some(config) => builder.ca_tls_config(config.clone()),
+            None => builder,
+        }
     }
 
     /// Resolve the secret key (use provided or generate random).

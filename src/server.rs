@@ -134,10 +134,15 @@ impl IrohServer {
         recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
     ) -> Result<iroh::EndpointId, EndpointStartError> {
         let sk = config.resolve_secret_key();
-        let builder = Endpoint::builder(iroh::endpoint::presets::N0)
+        let mut builder = Endpoint::builder(iroh::endpoint::presets::N0)
+            .bind_addr("0.0.0.0:0")
+            .unwrap()
             .secret_key(sk)
             .alpns(config.alpns.clone())
             .relay_mode(config.relay_mode.clone());
+        if let Some(ca_tls_config) = &config.ca_tls_config {
+            builder = builder.ca_tls_config(ca_tls_config.clone());
+        }
 
         let endpoint = self.runtime.block_on(async move {
             builder.bind().await

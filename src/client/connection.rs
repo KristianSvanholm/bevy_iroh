@@ -1,4 +1,4 @@
-use bevy::log::{error, info, trace};
+use bevy::log::{error, info, trace, warn};
 use bytes::Bytes;
 use iroh::endpoint::{Connection, Endpoint};
 use tokio::{
@@ -401,7 +401,25 @@ pub(crate) async fn async_connection_task(
     let endpoint_addr: iroh::EndpointAddr = if let Some(addr) = config.endpoint_addr.clone() {
         addr
     } else {
-        config.server_id.into()
+        let mut addr: iroh::EndpointAddr = config.server_id.into();
+        if endpoint.addr().relay_urls().next().is_none() {
+            info!("Waiting for home relay to become available...");
+        }
+        let relay_start = std::time::Instant::now();
+        let relay_url = loop {
+            if let Some(url) = endpoint.addr().relay_urls().next().cloned() {
+                break Some(url);
+            }
+            if relay_start.elapsed() > std::time::Duration::from_secs(10) {
+                warn!("Timed out waiting for home relay (10s)");
+                break None;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        };
+        if let Some(url) = relay_url {
+            addr = addr.with_relay_url(url);
+        }
+        addr
     };
 
     let connection = match endpoint.connect(endpoint_addr, &config.alpn).await {
